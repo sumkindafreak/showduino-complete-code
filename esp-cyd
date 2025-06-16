@@ -1,0 +1,624 @@
+// Complete the missing functions from your ESP32 Showduino code
+
+// ================================================================================
+// CUSTOM MATRIX EFFECTS INTEGRATION
+// ================================================================================
+
+#ifndef CUSTOM_MATRIX_FX_H
+#define CUSTOM_MATRIX_FX_H
+
+// Matrix configuration
+#define MATRIX_LED_PIN     27
+#define MATRIX_NUM_LEDS    72
+#define MATRIX_LAST_VISIBLE_LED 71
+#define MATRIX_WIDTH 9
+#define MATRIX_HEIGHT 8
+
+// Custom matrix strip (separate from logo strip)
+Adafruit_NeoPixel matrixStrip(MATRIX_NUM_LEDS, MATRIX_LED_PIN, NEO_RGB + NEO_KHZ800);
+
+// Custom XY mapping for irregular matrix layout
+uint8_t XY(uint8_t x, uint8_t y) {
+  if (x >= MATRIX_WIDTH || y >= MATRIX_HEIGHT) return MATRIX_LAST_VISIBLE_LED + 1;
+  const uint8_t XYTable[] = {
+   23,  24,  25,  26,  27,  28,  29,   0,   1,
+     4,   3,   2,  35,  34,  33,  32,  31,  30,
+     5,   6,   7,  36,  37,  38,  39,  40,  41,
+    10,   9,   8,  47,  46,  45,  44,  43,  42,
+    48,  11,  49,  50,  51,  52,  53,  54,  55,
+    13,  62,  12,  61,  60,  59,  58,  57,  56,
+    63,  64,  65,  14,  15,  16,  17,  18,  19,
+    71,  22,  70,  21,  69,  68,  67,  66,  20
+  };
+  return XYTable[y * MATRIX_WIDTH + x];
+}
+
+void initMatrixFX() {
+  matrixStrip.begin();
+  matrixStrip.setBrightness(100);
+  matrixStrip.show();
+  Serial.println("🔳 Custom matrix initialized (9x8 = 72 LEDs)");
+}
+
+void shimmerWaveFX(uint8_t frame) {
+  for (uint8_t y = 0; y < MATRIX_HEIGHT; y++) {
+    for (uint8_t x = 0; x < MATRIX_WIDTH; x++) {
+      uint8_t i = XY(x, y);
+      if (i > MATRIX_LAST_VISIBLE_LED) continue;
+      
+      int dx = x - 4;
+      int dy = y - 3;
+      float dist = sqrt(dx * dx + dy * dy);
+      float waveRaw = sinf((frame - (dist * 30)) * 0.05);
+      uint8_t wave = (waveRaw + 1.0) * 127.5;
+      
+      // Color blend emerald to purple
+      uint8_t emeraldR = 0, emeraldG = 255, emeraldB = 120;
+      uint8_t purpleR = 160, purpleG = 0, purpleB = 255;
+      float mix = ((x * y * 7) % 255) / 255.0;
+      
+      uint8_t r = emeraldR + mix * (purpleR - emeraldR);
+      uint8_t g = emeraldG + mix * (purpleG - emeraldG);
+      uint8_t b = emeraldB + mix * (purpleB - emeraldB);
+      
+      r = (r * wave) / 255;
+      g = (g * wave) / 255;
+      b = (b * wave) / 255;
+      
+      matrixStrip.setPixelColor(i, matrixStrip.Color(r, g, b));
+    }
+  }
+  matrixStrip.show();
+}
+
+void burstFromCenterFX(uint8_t speed, uint32_t color, uint8_t trail, uint8_t centerX, uint8_t centerY) {
+  static uint8_t burstFrame = 0;
+  
+  for (uint8_t y = 0; y < MATRIX_HEIGHT; y++) {
+    for (uint8_t x = 0; x < MATRIX_WIDTH; x++) {
+      uint8_t i = XY(x, y);
+      if (i > MATRIX_LAST_VISIBLE_LED) continue;
+      
+      int dx = x - centerX;
+      int dy = y - centerY;
+      float dist = sqrt(dx * dx + dy * dy);
+      uint8_t wave = constrain(255 - abs(burstFrame - (uint8_t)(dist * 30)), 0, 255);
+      
+      uint8_t r = ((color >> 16) & 0xFF) * wave * trail / (255 * 255);
+      uint8_t g = ((color >> 8) & 0xFF) * wave * trail / (255 * 255);
+      uint8_t b = (color & 0xFF) * wave * trail / (255 * 255);
+      
+      matrixStrip.setPixelColor(i, matrixStrip.Color(r, g, b));
+    }
+  }
+  matrixStrip.show();
+  
+  burstFrame += speed;
+  if (burstFrame > 255) burstFrame = 0;
+}
+
+// Additional matrix effects for integration with show system
+void matrixFillColor(uint32_t color) {
+  matrixStrip.fill(color);
+  matrixStrip.show();
+}
+
+void matrixClear() {
+  matrixStrip.clear();
+  matrixStrip.show();
+}
+
+void matrixSetBrightness(uint8_t brightness) {
+  matrixStrip.setBrightness(brightness);
+  matrixStrip.show();
+}
+
+// Matrix-specific effects for the show system
+void matrixRainbowWave(uint8_t frame) {
+  for (uint8_t y = 0; y < MATRIX_HEIGHT; y++) {
+    for (uint8_t x = 0; x < MATRIX_WIDTH; x++) {
+      uint8_t i = XY(x, y);
+      if (i > MATRIX_LAST_VISIBLE_LED) continue;
+      
+      uint8_t hue = (x * 32 + y * 16 + frame * 2) & 255;
+      uint32_t color = matrixStrip.gamma32(matrixStrip.ColorHSV(hue * 256));
+      matrixStrip.setPixelColor(i, color);
+    }
+  }
+  matrixStrip.show();
+}
+
+void matrixSpiral(uint8_t frame, uint32_t color) {
+  matrixStrip.clear();
+  
+  float centerX = 4.0;
+  float centerY = 3.5;
+  float angle = frame * 0.1;
+  
+  for (int i = 0; i < 20; i++) {
+    float r = i * 0.3;
+    int x = (int)(centerX + r * cos(angle + i * 0.5));
+    int y = (int)(centerY + r * sin(angle + i * 0.5));
+    
+    if (x >= 0 && x < MATRIX_WIDTH && y >= 0 && y < MATRIX_HEIGHT) {
+      uint8_t led = XY(x, y);
+      if (led <= MATRIX_LAST_VISIBLE_LED) {
+        uint8_t brightness = 255 - (i * 12);
+        uint8_t r = ((color >> 16) & 0xFF) * brightness / 255;
+        uint8_t g = ((color >> 8) & 0xFF) * brightness / 255;
+        uint8_t b = (color & 0xFF) * brightness / 255;
+        matrixStrip.setPixelColor(led, matrixStrip.Color(r, g, b));
+      }
+    }
+  }
+  matrixStrip.show();
+}
+
+#endif
+
+// Enhanced command types to include matrix effects
+enum MatrixEffectType {
+  MATRIX_SHIMMER_WAVE = 100,
+  MATRIX_BURST_CENTER = 101, 
+  MATRIX_RAINBOW_WAVE = 102,
+  MATRIX_SPIRAL = 103,
+  MATRIX_FILL = 104,
+  MATRIX_CLEAR = 105
+};
+
+// Enhanced FX instance to support matrix effects
+void updateMatrixFX() {
+  /*
+   * Update active matrix effects - integrates with existing FX system
+   */
+  static uint8_t matrixFrame = 0;
+  
+  for(int i = 0; i < MAX_CONCURRENT_FX; i++) {
+    if(activeFX[i].active && activeFX[i].systemType == 4) { // Matrix system type
+      FXInstance* fx = &activeFX[i];
+      
+      switch(fx->config.fxID) {
+        case MATRIX_SHIMMER_WAVE:
+          shimmerWaveFX(matrixFrame);
+          break;
+          
+        case MATRIX_BURST_CENTER:
+          burstFromCenterFX(fx->config.speed, fx->config.color, 
+                           fx->config.brightness, 4, 3); // Default center
+          break;
+          
+        case MATRIX_RAINBOW_WAVE:
+          matrixRainbowWave(matrixFrame);
+          break;
+          
+        case MATRIX_SPIRAL:
+          matrixSpiral(matrixFrame, fx->config.color);
+          break;
+          
+        case MATRIX_FILL:
+          matrixFillColor(fx->config.color);
+          break;
+          
+        case MATRIX_CLEAR:
+          matrixClear();
+          break;
+      }
+      
+      // Update frame counter
+      fx->currentFrame++;
+      if(fx->currentFrame >= fx->totalFrames) {
+        fx->active = false;
+        matrixClear(); // Clear when effect ends
+      }
+    }
+  }
+  
+  matrixFrame++;
+}
+
+// Matrix effect scheduling functions
+bool scheduleMatrixFX(uint16_t effectType, uint32_t color = 0xFFFFFF, 
+                     uint8_t speed = 50, uint8_t brightness = 255, 
+                     uint32_t duration = 5000, uint32_t delayMicros = 0) {
+  RTCommand cmd = {0};
+  cmd.commandType = CMD_FX;
+  cmd.fxID = effectType;
+  cmd.color = color;
+  cmd.speed = speed;
+  cmd.brightness = brightness;
+  cmd.count = duration / 50; // Convert duration to frames (assuming 50ms per frame)
+  
+  return scheduleRTCommand(&cmd, delayMicros);
+}
+
+// Helper function to start matrix effect instances
+void startMatrixFXInstance(RTCommand* cmd) {
+  for(int i = 0; i < MAX_CONCURRENT_FX; i++) {
+    if(!activeFX[i].active) {
+      activeFX[i].active = true;
+      activeFX[i].startTime = esp_timer_get_time();
+      activeFX[i].lastUpdate = activeFX[i].startTime;
+      activeFX[i].fxID = cmd->fxID;
+      activeFX[i].currentFrame = 0;
+      activeFX[i].totalFrames = cmd->count; // Duration in frames
+      activeFX[i].config = *cmd;
+      activeFX[i].systemType = 4; // Matrix system type
+      break;
+    }
+  }
+}
+
+// Complete the initializeDMXSystem function
+void initializeDMXSystem() {
+  /*
+   * Initialize DMX fixture definitions and state - NEW!
+   */
+  
+  // Clear fixture array
+  for (int i = 0; i < MAX_DMX_FIXTURES; i++) {
+    dmxFixtures[i].active = false;
+  }
+  dmxFixtureCount = 0;
+  
+  // Add default fixtures (matching Mega configuration)
+  addDMXFixture(1, "Front RGB Par 1", "RGB_PAR", 1, 7);
+  addDMXFixture(2, "Front RGB Par 2", "RGB_PAR", 8, 7);
+  addDMXFixture(3, "Side Wash 1", "SIMPLE_RGB", 15, 3);
+  addDMXFixture(4, "Side Wash 2", "SIMPLE_RGB", 18, 3);
+  addDMXFixture(5, "Moving Head 1", "MOVING_HEAD", 25, 16);
+  addDMXFixture(6, "Moving Head 2", "MOVING_HEAD", 41, 16);
+  addDMXFixture(7, "Main Strobe", "STROBE", 100, 1);
+  addDMXFixture(8, "Fog Machine", "FOG", 101, 1);
+  
+  // Initialize DMX state
+  dmxState.connected = false;
+  dmxState.activeEffects = 0;
+  dmxState.currentScene = 0;
+  dmxState.blackoutActive = false;
+  dmxState.lastUpdate = millis();
+  
+  Serial.printf("🎭 DMX system initialized with %d fixtures\n", dmxFixtureCount);
+}
+
+// Missing UI functions
+void drawShowGrid() {
+  tft.fillScreen(TFT_BLACK);
+  
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.drawString("SHOW GRID", 10, 10);
+  
+  buttonCount = 0;
+  addButton(10, 200, 60, 30, "BACK", TFT_RED, true, 0);
+  
+  // Show file grid
+  int x = 10, y = 50;
+  for (int i = 0; i < showFileCount && i < 12; i++) {
+    if (i > 0 && i % 3 == 0) {
+      x = 10;
+      y += 50;
+    }
+    
+    addButton(x, y, 95, 40, showFiles[i].displayName, TFT_GREEN, true, 10 + i);
+    x += 105;
+  }
+  
+  drawButtons();
+  ui.screenNeedsRedraw = false;
+}
+
+void drawLiveControls() {
+  tft.fillScreen(TFT_BLACK);
+  
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.drawString("LIVE CONTROL", 10, 10);
+  
+  buttonCount = 0;
+  addButton(10, 200, 60, 30, "BACK", TFT_RED, true, 0);
+  
+  // Quick effect buttons for regular strip
+  addButton(10, 50, 70, 30, "RED FX", TFT_RED, true, 20);
+  addButton(85, 50, 70, 30, "BLUE FX", TFT_BLUE, true, 21);
+  addButton(160, 50, 70, 30, "GREEN FX", TFT_GREEN, true, 22);
+  addButton(235, 50, 70, 30, "WHITE FX", TFT_WHITE, true, 23);
+  
+  // Matrix effect buttons - NEW!
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.drawString("Matrix Effects:", 10, 95);
+  
+  addButton(10, 105, 60, 25, "SHIMMER", TFT_PURPLE, true, 27);
+  addButton(75, 105, 60, 25, "BURST", TFT_ORANGE, true, 28);
+  addButton(140, 105, 60, 25, "RAINBOW", TFT_YELLOW, true, 29);
+  addButton(205, 105, 60, 25, "SPIRAL", TFT_PINK, true, 30);
+  
+  // Relay controls
+  addButton(10, 140, 70, 30, "RELAY 1", TFT_CYAN, ui.megaConnected, 24);
+  addButton(85, 140, 70, 30, "RELAY 2", TFT_CYAN, ui.megaConnected, 25);
+  
+  // Emergency stop
+  addButton(10, 175, 150, 20, "EMERGENCY STOP", TFT_RED, true, 26);
+  
+  drawButtons();
+  ui.screenNeedsRedraw = false;
+}
+
+void drawSettings() {
+  tft.fillScreen(TFT_BLACK);
+  
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.drawString("SETTINGS", 10, 10);
+  
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.drawString("System Configuration", 10, 35);
+  
+  buttonCount = 0;
+  addButton(10, 200, 60, 30, "BACK", TFT_RED, true, 0);
+  
+  // Settings options
+  addButton(10, 60, 120, 30, "WiFi Setup", TFT_BLUE, true, 50);
+  addButton(140, 60, 120, 30, "DMX Config", TFT_PURPLE, true, 51);
+  addButton(10, 100, 120, 30, "Brightness", TFT_YELLOW, true, 52);
+  addButton(140, 100, 120, 30, "Reset", TFT_ORANGE, true, 53);
+  
+  drawButtons();
+  ui.screenNeedsRedraw = false;
+}
+
+void drawDiagnostics() {
+  tft.fillScreen(TFT_BLACK);
+  
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.drawString("DIAGNOSTICS", 10, 10);
+  
+  tft.setTextSize(1);
+  
+  // System stats
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.drawString("Real-time Performance:", 10, 40);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.printf("RT Cycles: %u\n", rtTaskCycles);
+  tft.printf("Commands: %u\n", totalCommands);
+  tft.printf("Dropped: %u\n", droppedCommands);
+  tft.printf("Max Exec: %u us\n", maxExecutionTime);
+  
+  float successRate = totalCommands > 0 ? 
+    (float)(totalCommands - droppedCommands) / totalCommands * 100.0f : 100.0f;
+  tft.printf("Success: %.1f%%\n", successRate);
+  
+  // Memory info
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.drawString("Memory:", 10, 120);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.printf("Free Heap: %u bytes\n", ESP.getFreeHeap());
+  
+  // Connection status
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.drawString("Connections:", 10, 160);
+  tft.setTextColor(ui.megaConnected ? TFT_GREEN : TFT_RED, TFT_BLACK);
+  tft.printf("Mega: %s\n", ui.megaConnected ? "Connected" : "Disconnected");
+  
+  buttonCount = 0;
+  addButton(10, 200, 60, 30, "BACK", TFT_RED, true, 0);
+  addButton(240, 200, 70, 30, "REFRESH", TFT_GREEN, true, 60);
+  
+  drawButtons();
+  ui.screenNeedsRedraw = false;
+}
+
+// Button system functions
+void addButton(uint16_t x, uint16_t y, uint16_t w, uint16_t h, 
+               String label, uint16_t color, bool enabled, uint8_t action) {
+  if (buttonCount >= MAX_BUTTONS) return;
+  
+  buttons[buttonCount].x = x;
+  buttons[buttonCount].y = y;
+  buttons[buttonCount].w = w;
+  buttons[buttonCount].h = h;
+  buttons[buttonCount].label = label;
+  buttons[buttonCount].color = enabled ? color : TFT_DARKGREY;
+  buttons[buttonCount].enabled = enabled;
+  buttons[buttonCount].action = action;
+  buttonCount++;
+}
+
+void drawButtons() {
+  for (int i = 0; i < buttonCount; i++) {
+    TouchButton* btn = &buttons[i];
+    
+    // Draw button background
+    tft.fillRoundRect(btn->x, btn->y, btn->w, btn->h, 5, btn->color);
+    
+    // Draw button border
+    tft.drawRoundRect(btn->x, btn->y, btn->w, btn->h, 5, TFT_WHITE);
+    
+    // Draw button text
+    tft.setTextColor(TFT_BLACK, btn->color);
+    tft.setTextSize(1);
+    
+    // Center text
+    int16_t textWidth = btn->label.length() * 6;
+    int16_t textX = btn->x + (btn->w - textWidth) / 2;
+    int16_t textY = btn->y + (btn->h - 8) / 2;
+    
+    tft.drawString(btn->label, textX, textY);
+  }
+}
+
+uint8_t checkButtonPress() {
+  if (!touch.touched()) return 0;
+  
+  TS_Point p = touch.getPoint();
+  
+  // Convert touch coordinates to screen coordinates
+  uint16_t x = map(p.x, 0, 4095, 0, 320);
+  uint16_t y = map(p.y, 0, 4095, 0, 240);
+  
+  for (int i = 0; i < buttonCount; i++) {
+    TouchButton* btn = &buttons[i];
+    
+    if (btn->enabled && 
+        x >= btn->x && x <= (btn->x + btn->w) &&
+        y >= btn->y && y <= (btn->y + btn->h)) {
+      
+      // Debounce
+      delay(200);
+      return btn->action;
+    }
+  }
+  
+  return 0;
+}
+
+// WebSocket event handler
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
+  switch(type) {
+    case WStype_DISCONNECTED:
+      Serial.printf("WebSocket client %u disconnected\n", num);
+      break;
+      
+    case WStype_CONNECTED:
+      {
+        IPAddress ip = webSocket.remoteIP(num);
+        Serial.printf("WebSocket client %u connected from %d.%d.%d.%d\n", 
+          num, ip[0], ip[1], ip[2], ip[3]);
+        
+        // Send welcome message with system status
+        DynamicJsonDocument doc(1024);
+        doc["type"] = "welcome";
+        doc["device"] = "Showduino ESP32 Complete";
+        doc["version"] = "3.0.0";
+        doc["mega_connected"] = ui.megaConnected;
+        doc["show_count"] = showFileCount;
+        doc["dmx_fixtures"] = dmxFixtureCount;
+        
+        String message;
+        serializeJson(doc, message);
+        webSocket.sendTXT(num, message);
+      }
+      break;
+      
+    case WStype_TEXT:
+      Serial.printf("WebSocket received: %s\n", payload);
+      // Handle WebSocket commands here if needed
+      break;
+      
+    default:
+      break;
+  }
+}
+
+// Additional web server handlers
+void handleFXCommand() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
+  if (server.hasArg("plain")) {
+    DynamicJsonDocument doc(1024);
+    deserializeJson(doc, server.arg("plain"));
+    
+    uint16_t fxId = doc["fx_id"] | 0;
+    uint16_t start = doc["start"] | 0;
+    uint16_t count = doc["count"] | LOGO_STRIP_COUNT;
+    String colorStr = doc["color"] | "#FFFFFF";
+    uint8_t speed = doc["speed"] | 50;
+    uint8_t brightness = doc["brightness"] | 255;
+    uint32_t delay = doc["delay"] | 0;
+    
+    uint32_t color = hexToColor(colorStr);
+    
+    bool success = scheduleFX(fxId, start, count, color, speed, brightness, delay * 1000);
+    
+    if (success) {
+      server.send(200, "application/json", "{\"status\":\"success\"}");
+    } else {
+      server.send(500, "application/json", "{\"error\":\"Command failed\"}");
+    }
+  } else {
+    server.send(400, "application/json", "{\"error\":\"No JSON payload\"}");
+  }
+}
+
+void handleRelayCommand() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
+  if (server.hasArg("plain")) {
+    DynamicJsonDocument doc(512);
+    deserializeJson(doc, server.arg("plain"));
+    
+    uint8_t relayId = doc["relay_id"] | 1;
+    String state = doc["state"] | "ON";
+    uint32_t duration = doc["duration"] | 0;
+    uint32_t delay = doc["delay"] | 0;
+    
+    bool relayState = (state == "ON");
+    bool success = scheduleRelay(relayId, relayState, delay * 1000, duration);
+    
+    if (success) {
+      server.send(200, "application/json", "{\"status\":\"success\"}");
+    } else {
+      server.send(500, "application/json", "{\"error\":\"Relay command failed\"}");
+    }
+  } else {
+    server.send(400, "application/json", "{\"error\":\"No JSON payload\"}");
+  }
+}
+
+void handleSceneCommand() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
+  if (server.hasArg("plain")) {
+    DynamicJsonDocument doc(512);
+    deserializeJson(doc, server.arg("plain"));
+    
+    String action = doc["action"];
+    
+    if (action == "load") {
+      String sceneName = doc["scene"];
+      String scenePath = "/scenes/" + sceneName;
+      
+      if (scenePlayer.loadScene(scenePath.c_str())) {
+        server.send(200, "application/json", "{\"status\":\"success\"}");
+      } else {
+        server.send(404, "application/json", "{\"error\":\"Scene not found\"}");
+      }
+      
+    } else if (action == "play") {
+      scenePlayer.play();
+      server.send(200, "application/json", "{\"status\":\"playing\"}");
+      
+    } else if (action == "stop") {
+      scenePlayer.stop();
+      server.send(200, "application/json", "{\"status\":\"stopped\"}");
+      
+    } else {
+      server.send(400, "application/json", "{\"error\":\"Invalid action\"}");
+    }
+  } else {
+    server.send(400, "application/json", "{\"error\":\"No JSON payload\"}");
+  }
+}
+
+void handleGetShows() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
+  DynamicJsonDocument doc(2048);
+  JsonArray shows = doc.createNestedArray("shows");
+  
+  for (int i = 0; i < showFileCount; i++) {
+    JsonObject show = shows.createNestedObject();
+    show["filename"] = showFiles[i].filename;
+    show["display_name"] = showFiles[i].displayName;
+    show["duration"] = showFiles[i].duration;
+    show["loaded"] = showFiles[i].loaded;
+  }
+  
+  doc["total_shows"] = showFileCount;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
